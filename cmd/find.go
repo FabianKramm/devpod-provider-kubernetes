@@ -35,7 +35,12 @@ func NewFindCmd() *cobra.Command {
 
 // Run runs the command logic
 func (cmd *FindCmd) Run(ctx context.Context, options *options.Options, log log.Logger) error {
-	containerDetails, err := kubernetes.NewKubernetesDriver(options, log).FindDevContainer(ctx, options.DevContainerID)
+	driver, err := kubernetes.NewKubernetesDriver(options, log)
+	if err != nil {
+		return err
+	}
+
+	containerDetails, err := driver.FindDevContainer(ctx, options.DevContainerID)
 	if err != nil {
 		return err
 	} else if containerDetails == nil {

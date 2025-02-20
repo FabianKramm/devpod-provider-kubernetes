@@ -2,12 +2,13 @@ package kubernetes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/loft-sh/devpod-provider-kubernetes/pkg/docker"
 	perrors "github.com/pkg/errors"
 	k8sv1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (k *KubernetesDriver) EnsurePullSecret(
@@ -55,22 +56,9 @@ func (k *KubernetesDriver) ReadSecretContents(
 	pullSecretName string,
 	host string,
 ) (string, error) {
-	args := []string{
-		"get",
-		"secret",
-		pullSecretName,
-		"-o", "json",
-	}
-
-	out, err := k.buildCmd(ctx, args).CombinedOutput()
+	secret, err := k.client.Client().CoreV1().Secrets(k.namespace).Get(ctx, pullSecretName, metav1.GetOptions{})
 	if err != nil {
-		return "", perrors.Wrapf(err, "delete pull secret: %s", string(out))
-	}
-
-	var secret k8sv1.Secret
-	err = json.Unmarshal(out, &secret)
-	if err != nil {
-		return "", perrors.Wrap(err, "unmarshal secret")
+		return "", perrors.Wrap(err, "get secret")
 	}
 
 	return DecodeAuthTokenFromPullSecret(secret, host)
@@ -83,15 +71,9 @@ func (k *KubernetesDriver) DeletePullSecret(
 		return nil
 	}
 
-	args := []string{
-		"delete",
-		"secret",
-		pullSecretName,
-	}
-
-	out, err := k.buildCmd(ctx, args).CombinedOutput()
-	if err != nil {
-		return perrors.Wrapf(err, "delete pull secret: %s", string(out))
+	err := k.client.Client().CoreV1().Secrets(k.namespace).Delete(ctx, pullSecretName, metav1.DeleteOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return perrors.Wrap(err, "delete pull secret")
 	}
 
 	return nil
@@ -109,17 +91,8 @@ func (k *KubernetesDriver) secretExists(
 	ctx context.Context,
 	pullSecretName string,
 ) bool {
-	args := []string{
-		"get",
-		"secret",
-		pullSecretName,
-	}
-
-	_, err := k.buildCmd(ctx, args).CombinedOutput()
-	if err != nil {
-		return false
-	}
-	return true
+	_, err := k.client.Client().CoreV1().Secrets(k.namespace).Get(ctx, pullSecretName, metav1.GetOptions{})
+	return err == nil
 }
 
 func (k *KubernetesDriver) createPullSecret(
@@ -136,18 +109,17 @@ func (k *KubernetesDriver) createPullSecret(
 		return perrors.Wrap(err, "prepare pull secret data")
 	}
 
-	args := []string{
-		"create",
-		"secret",
-		"generic",
-		pullSecretName,
-		"--type", string(k8sv1.SecretTypeDockerConfigJson),
-		"--from-literal", encodedSecretData,
-	}
-
-	out, err := k.buildCmd(ctx, args).CombinedOutput()
+	_, err = k.client.Client().CoreV1().Secrets(k.namespace).Create(ctx, &k8sv1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pullSecretName,
+		},
+		Type: k8sv1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(encodedSecretData),
+		},
+	}, metav1.CreateOptions{})
 	if err != nil {
-		return perrors.Wrapf(err, "create pull secret: %s", string(out))
+		return perrors.Wrap(err, "create pull secret")
 	}
 
 	return nil

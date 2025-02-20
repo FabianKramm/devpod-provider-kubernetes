@@ -33,5 +33,10 @@ func NewStopCmd() *cobra.Command {
 
 // Run runs the command logic
 func (cmd *StopCmd) Run(ctx context.Context, options *options.Options, log log.Logger) error {
-	return kubernetes.NewKubernetesDriver(options, log).StopDevContainer(ctx, options.DevContainerID)
+	driver, err := kubernetes.NewKubernetesDriver(options, log)
+	if err != nil {
+		return err
+	}
+
+	return driver.StopDevContainer(ctx, options.DevContainerID)
 }

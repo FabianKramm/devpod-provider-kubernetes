@@ -33,5 +33,10 @@ func NewDeleteCmd() *cobra.Command {
 
 // Run runs the command logic
 func (cmd *DeleteCmd) Run(ctx context.Context, options *options.Options, log log.Logger) error {
-	return kubernetes.NewKubernetesDriver(options, log).DeleteDevContainer(ctx, options.DevContainerID)
+	driver, err := kubernetes.NewKubernetesDriver(options, log)
+	if err != nil {
+		return err
+	}
+
+	return driver.DeleteDevContainer(ctx, options.DevContainerID)
 }

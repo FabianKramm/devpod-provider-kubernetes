@@ -57,7 +57,7 @@ func toPullSecretData(dockerConfig *DockerConfigJSON) (string, error) {
 	return k8sv1.DockerConfigJsonKey + "=" + string(data), nil
 }
 
-func DecodeAuthTokenFromPullSecret(secret k8sv1.Secret, host string) (string, error) {
+func DecodeAuthTokenFromPullSecret(secret *k8sv1.Secret, host string) (string, error) {
 	dockerConfigBytes, ok := secret.Data[k8sv1.DockerConfigJsonKey]
 	if !ok {
 		return "", fmt.Errorf("could not find %s in secret data", k8sv1.DockerConfigJsonKey)

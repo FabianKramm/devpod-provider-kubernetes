@@ -38,6 +38,7 @@ func (k *KubernetesDriver) getInitContainers(options *driver.RunOptions, pod *co
 	}
 
 	retContainers := []corev1.Container{}
+
 	// merge with existing init container if it exists
 	var existingInitContainer *corev1.Container
 	for i, container := range pod.Spec.InitContainers {
@@ -66,9 +67,6 @@ func (k *KubernetesDriver) getInitContainers(options *driver.RunOptions, pod *co
 	if existingInitContainer != nil {
 		resources = existingInitContainer.Resources
 	}
-	if k.options.HelperResources != "" {
-		resources = parseResources(k.options.HelperResources, k.Log)
-	}
 
 	initContainer := corev1.Container{
 		Name:            InitContainerName,
@@ -91,8 +89,7 @@ func (k *KubernetesDriver) getInitContainers(options *driver.RunOptions, pod *co
 			initContainer.SecurityContext = existingInitContainer.SecurityContext
 		}
 	}
+
 	retContainers = append(retContainers, initContainer)
-
 	return retContainers, nil
-
 }

@@ -1,7 +1,6 @@
 package kubernetes
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"github.com/loft-sh/devpod/pkg/driver"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,11 +47,9 @@ func (k *KubernetesDriver) RunDevContainer(
 
 	// namespace
 	if k.namespace != "" && k.options.CreateNamespace == "true" {
-		k.Log.Debugf("Create namespace '%s'", k.namespace)
-		buf := &bytes.Buffer{}
-		err := k.runCommand(ctx, []string{"create", "ns", k.namespace}, nil, buf, buf)
+		err := k.createNamespace(ctx)
 		if err != nil {
-			k.Log.Debugf("Error creating namespace: %s%v", buf.String(), err)
+			return err
 		}
 	}
 
@@ -64,7 +62,7 @@ func (k *KubernetesDriver) RunDevContainer(
 
 	if pvc == nil {
 		if options == nil {
-			return fmt.Errorf("No options provided and no persistent volume claim found for workspace '%s'", workspaceId)
+			return fmt.Errorf("no options provided and no persistent volume claim found for workspace '%s'", workspaceId)
 		}
 
 		// create persistent volume claim
@@ -116,10 +114,6 @@ func (k *KubernetesDriver) runContainer(
 
 	// read pod template
 	pod := &corev1.Pod{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Pod",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
@@ -220,51 +214,6 @@ func (k *KubernetesDriver) runContainer(
 	pod.Spec.Containers = getContainers(pod, options.Image, options.Entrypoint, options.Cmd, envVars, volumeMounts, capabilities, resources, options.Privileged, k.options.DangerouslyOverrideImage, k.options.StrictSecurity)
 	pod.Spec.Volumes = getVolumes(pod, id)
 
-	affinity := false
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	affinityPodID := ""
-
-	err = k.runCommand(ctx, []string{"get", "pods", "-o=name", "-l", DevPodWorkspaceLabel + "=" + id}, nil, stdout, stderr)
-	if err != nil {
-		k.Log.Debugf("skipping finding cluster architecture: %s %s %w", stdout.String(), stderr.String(), err)
-	}
-	if stdout.String() != "" {
-		affinityPodID = strings.TrimSpace(stdout.String())
-		affinity = true
-	}
-
-	if affinity && k.options.NodeSelector == "" {
-		k.Log.Infof("Found architecture detecting pod: %s, using PodAffinity...", affinityPodID)
-
-		// ensure we have a pod affinity, and in that case we have, just add ours
-		if pod.Spec.Affinity == nil || pod.Spec.Affinity.PodAffinity == nil {
-			if pod.Spec.Affinity == nil {
-				pod.Spec.Affinity = &corev1.Affinity{}
-			}
-			pod.Spec.Affinity.PodAffinity = &corev1.PodAffinity{
-				RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{},
-			}
-		}
-
-		// append our affinity term
-		pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
-			pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
-			corev1.PodAffinityTerm{
-				LabelSelector: &metav1.LabelSelector{
-					MatchExpressions: []metav1.LabelSelectorRequirement{
-						{
-							Key:      DevPodWorkspaceLabel,
-							Operator: metav1.LabelSelectorOpIn,
-							Values:   []string{id},
-						},
-					},
-				},
-				Namespaces:  []string{k.namespace},
-				TopologyKey: "kubernetes.io/hostname",
-			})
-	}
-
 	if k.options.KubernetesPullSecretsEnabled == "true" && pullSecretsCreated {
 		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: getPullSecretsName(id)}}
 	}
@@ -296,7 +245,7 @@ func (k *KubernetesDriver) runContainer(
 		}
 	}
 
-	err = k.runPod(ctx, id, pod, affinity)
+	err = k.runPod(ctx, id, pod)
 	if err != nil {
 		return err
 	}
@@ -304,7 +253,7 @@ func (k *KubernetesDriver) runContainer(
 	return nil
 }
 
-func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Pod, affinity bool) error {
+func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Pod) error {
 	var err error
 
 	// set configuration before creating the pod
@@ -325,12 +274,12 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	}
 
 	k.Log.Debugf("Create pod with: %s", string(podRaw))
+
 	// create the pod
 	k.Log.Infof("Create Pod '%s'", id)
-	buf := &bytes.Buffer{}
-	err = k.runCommand(ctx, []string{"create", "-f", "-"}, strings.NewReader(string(podRaw)), buf, buf)
+	_, err = k.client.Client().CoreV1().Pods(k.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "create pod: %s", buf.String())
+		return fmt.Errorf("create pod: %w", err)
 	}
 
 	// wait for pod running
@@ -338,14 +287,6 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	_, err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err
-	}
-
-	if affinity {
-		k.Log.Infof("Cleaning up architecture detection pod")
-		err := k.runCommand(ctx, []string{"delete", "pods", "--force", "-l", DevPodWorkspaceLabel + "=" + id}, nil, buf, buf)
-		if err != nil {
-			return errors.Wrapf(err, "cleanup jobs: %s", buf.String())
-		}
 	}
 
 	return nil
@@ -518,4 +459,21 @@ func getID(workspaceID string) string {
 
 func getPullSecretsName(workspaceID string) string {
 	return fmt.Sprintf("devpod-pull-secret-%s", workspaceID)
+}
+
+func (k *KubernetesDriver) createNamespace(ctx context.Context) error {
+	_, err := k.client.Client().CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
+	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
+		k.Log.Debugf("Create namespace '%s'", k.namespace)
+		_, err := k.client.Client().CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: k.namespace,
+			},
+		}, metav1.CreateOptions{})
+		if err != nil && !kerrors.IsAlreadyExists(err) && !kerrors.IsForbidden(err) {
+			return fmt.Errorf("create namespace: %w", err)
+		}
+	}
+
+	return nil
 }

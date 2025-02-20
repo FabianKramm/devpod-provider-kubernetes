@@ -1,10 +1,9 @@
 package kubernetes
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"strings"
+	"fmt"
 
 	"github.com/loft-sh/devpod/pkg/driver"
 	"github.com/pkg/errors"
@@ -18,16 +17,15 @@ func (k *KubernetesDriver) createPersistentVolumeClaim(
 	id string,
 	options *driver.RunOptions,
 ) error {
-	pvcString, err := k.buildPersistentVolumeClaim(id, options)
+	pvc, err := k.buildPersistentVolumeClaim(id, options)
 	if err != nil {
 		return err
 	}
 
 	k.Log.Infof("Create Persistent Volume Claim '%s'", id)
-	buf := &bytes.Buffer{}
-	err = k.runCommand(ctx, []string{"create", "-f", "-"}, strings.NewReader(pvcString), buf, buf)
+	_, err = k.client.Client().CoreV1().PersistentVolumeClaims(k.namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "create pvc: %s", buf.String())
+		return fmt.Errorf("create pvc: %w", err)
 	}
 
 	return nil
@@ -36,10 +34,10 @@ func (k *KubernetesDriver) createPersistentVolumeClaim(
 func (k *KubernetesDriver) buildPersistentVolumeClaim(
 	id string,
 	options *driver.RunOptions,
-) (string, error) {
+) (*corev1.PersistentVolumeClaim, error) {
 	containerInfo, err := k.getDevContainerInformation(id, options)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	size := "10Gi"
@@ -48,7 +46,7 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 	}
 	quantity, err := resource.ParseQuantity(size)
 	if err != nil {
-		return "", errors.Wrapf(err, "parse persistent volume size '%s'", size)
+		return nil, errors.Wrapf(err, "parse persistent volume size '%s'", size)
 	}
 
 	var storageClassName *string
@@ -87,7 +85,7 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 		annotations[k] = v
 	}
 
-	pvc := &corev1.PersistentVolumeClaim{
+	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PersistentVolumeClaim",
 			APIVersion: corev1.SchemeGroupVersion.String(),
@@ -106,14 +104,7 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 			},
 			StorageClassName: storageClassName,
 		},
-	}
-
-	raw, err := json.Marshal(pvc)
-	if err != nil {
-		return "", err
-	}
-
-	return string(raw), nil
+	}, nil
 }
 
 func (k *KubernetesDriver) getDevContainerInformation(

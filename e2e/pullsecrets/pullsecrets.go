@@ -162,9 +162,11 @@ func prepareK8sDriver(namespace string) *kubernetes.KubernetesDriver {
 	options := options2.Options{
 		KubernetesNamespace: namespace,
 	}
-	driver := kubernetes.NewKubernetesDriver(
-		&options, log.Default.ErrorStreamOnly()).(*kubernetes.KubernetesDriver)
-	return driver
+	driver, err := kubernetes.NewKubernetesDriver(&options, log.Default.ErrorStreamOnly())
+	if err != nil {
+		panic(err)
+	}
+	return driver.(*kubernetes.KubernetesDriver)
 }
 
 func createEphemeralNamespace(client *k8s.Clientset) string {

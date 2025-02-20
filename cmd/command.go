@@ -34,7 +34,12 @@ func NewCommandCmd() *cobra.Command {
 
 // Run runs the command logic
 func (cmd *CommandCmd) Run(ctx context.Context, options *options.Options, log log.Logger) error {
-	return kubernetes.NewKubernetesDriver(options, log).CommandDevContainer(
+	driver, err := kubernetes.NewKubernetesDriver(options, log)
+	if err != nil {
+		return err
+	}
+
+	return driver.CommandDevContainer(
 		ctx,
 		options.DevContainerID,
 		os.Getenv("DEVCONTAINER_USER"),

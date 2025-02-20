@@ -2,15 +2,16 @@ package kubernetes
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/loft-sh/devpod-provider-kubernetes/pkg/throttledlogger"
-	"github.com/loft-sh/devpod/pkg/command"
 	perrors "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -143,18 +144,13 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 
 func (k *KubernetesDriver) getPod(ctx context.Context, id string) (*corev1.Pod, error) {
 	// try to find pod
-	out, err := k.buildCmd(ctx, []string{"get", "pod", id, "--ignore-not-found", "-o", "json"}).Output()
+	pod, err := k.client.Client().CoreV1().Pods(k.namespace).Get(ctx, id, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("find container: %w", command.WrapCommandError(out, err))
-	} else if len(out) == 0 {
-		return nil, nil
-	}
+		if kerrors.IsNotFound(err) {
+			return nil, nil
+		}
 
-	// try to unmarshal pod
-	pod := &corev1.Pod{}
-	err = json.Unmarshal(out, pod)
-	if err != nil {
-		return nil, perrors.Wrap(err, "unmarshal pod")
+		return nil, fmt.Errorf("find container: %w", err)
 	}
 
 	return pod, nil
@@ -175,9 +171,25 @@ func restartableInitContainer(p *corev1.ContainerRestartPolicy) bool {
 }
 
 func (k *KubernetesDriver) waitPodDeleted(ctx context.Context, id string) error {
-	out, err := k.buildCmd(ctx, []string{"delete", "pod", id, "--ignore-not-found", "--wait"}).Output()
+	err := k.client.Client().CoreV1().Pods(k.namespace).Delete(ctx, id, metav1.DeleteOptions{})
 	if err != nil {
-		return fmt.Errorf("delete pod: %w", command.WrapCommandError(out, err))
+		if kerrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("delete pod: %w", err)
+	}
+
+	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*2, true, func(ctx context.Context) (bool, error) {
+		_, err := k.client.Client().CoreV1().Pods(k.namespace).Get(ctx, id, metav1.GetOptions{})
+		if err != nil {
+			return true, nil
+		}
+
+		return false, nil
+	})
+	if err != nil {
+		return errors.New("timeout waiting for pod to be deleted")
 	}
 
 	return nil

@@ -12,7 +12,6 @@ type Options struct {
 	KubernetesContext   string `json:"-"`
 	KubernetesConfig    string `json:"-"`
 	KubernetesNamespace string `json:"-"`
-	KubectlPath         string `json:"-"`
 	PodTimeout          string `json:"-"`
 }
 
@@ -24,8 +23,7 @@ type ComparableOptions struct {
 	ClusterRole                  string `json:"clusterRole,omitempty"`
 	ServiceAccount               string `json:"serviceAccount,omitempty"`
 
-	HelperImage       string `json:"helperImage,omitempty"`
-	HelperResources   string `json:"helperResources,omitempty"`
+	Architecture      string `json:"architecture,omitempty"`
 	InactivityTimeout string `json:"inactivityTimeout,omitempty"`
 	StorageClass      string `json:"storageClass,omitempty"`
 
@@ -36,9 +34,8 @@ type ComparableOptions struct {
 	Resources            string `json:"resources,omitempty"`
 	WorkspaceVolumeMount string `json:"workspaceVolumeMount,omitempty"`
 
-	PodManifestTemplate              string `json:"podManifestTemplate,omitempty"`
-	ArchDetectionPodManifestTemplate string `json:"archDetectionPodManifestTemplate,omitempty"`
-	Labels                           string `json:"labels,omitempty"`
+	PodManifestTemplate string `json:"podManifestTemplate,omitempty"`
+	Labels              string `json:"labels,omitempty"`
 
 	DangerouslyOverrideImage string `json:"dangerouslyOverrideImage,omitempty"`
 	StrictSecurity           bool   `json:"strictSecurity,omitempty"`
@@ -62,9 +59,6 @@ func FromEnv() (*Options, error) {
 	retOptions.CreateNamespace = os.Getenv("CREATE_NAMESPACE")
 	retOptions.ClusterRole = os.Getenv("CLUSTER_ROLE")
 	retOptions.ServiceAccount = os.Getenv("SERVICE_ACCOUNT")
-	retOptions.HelperImage = os.Getenv("HELPER_IMAGE")
-	retOptions.HelperResources = os.Getenv("HELPER_RESOURCES")
-	retOptions.KubectlPath = os.Getenv("KUBECTL_PATH")
 	retOptions.InactivityTimeout = os.Getenv("INACTIVITY_TIMEOUT")
 	retOptions.StorageClass = os.Getenv("STORAGE_CLASS")
 	retOptions.PvcAccessMode = os.Getenv("PVC_ACCESS_MODE")
@@ -75,7 +69,6 @@ func FromEnv() (*Options, error) {
 	retOptions.PodTimeout = os.Getenv("POD_TIMEOUT")
 	retOptions.DangerouslyOverrideImage = os.Getenv("DANGEROUSLY_OVERRIDE_IMAGE")
 	retOptions.StrictSecurity = os.Getenv("STRICT_SECURITY") == "true"
-	retOptions.ArchDetectionPodManifestTemplate = os.Getenv("ARCH_DETECTION_POD_MANIFEST_TEMPLATE")
 	retOptions.WorkspaceVolumeMount = os.Getenv("WORKSPACE_VOLUME_MOUNT")
 	retOptions.PvcAnnotations = os.Getenv("PVC_ANNOTATIONS")
 

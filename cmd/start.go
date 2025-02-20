@@ -33,5 +33,10 @@ func NewStartCmd() *cobra.Command {
 
 // Run runs the command logic
 func (cmd *StartCmd) Run(ctx context.Context, options *options.Options, log log.Logger) error {
-	return kubernetes.NewKubernetesDriver(options, log).StartDevContainer(ctx, options.DevContainerID)
+	driver, err := kubernetes.NewKubernetesDriver(options, log)
+	if err != nil {
+		return err
+	}
+
+	return driver.StartDevContainer(ctx, options.DevContainerID)
 }

@@ -48,5 +48,10 @@ func (cmd *RunCmd) Run(ctx context.Context, options *options.Options, log log.Lo
 		}
 	}
 
-	return kubernetes.NewKubernetesDriver(options, log).RunDevContainer(ctx, options.DevContainerID, runOptions)
+	driver, err := kubernetes.NewKubernetesDriver(options, log)
+	if err != nil {
+		return err
+	}
+
+	return driver.RunDevContainer(ctx, options.DevContainerID, runOptions)
 }

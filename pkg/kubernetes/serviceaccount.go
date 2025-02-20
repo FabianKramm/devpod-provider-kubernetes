@@ -1,58 +1,43 @@
 package kubernetes
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"fmt"
 
-	"github.com/loft-sh/devpod/pkg/command"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (k *KubernetesDriver) createServiceAccount(ctx context.Context, id, serviceAccount string) error {
 	// try to find pvc
-	out, err := k.buildCmd(ctx, []string{"get", "serviceaccount", serviceAccount, "--ignore-not-found", "-o", "json"}).Output()
-	if err != nil {
-		return command.WrapCommandError(out, err)
-	} else if len(out) == 0 {
+	_, err := k.client.Client().CoreV1().ServiceAccounts(k.namespace).Get(ctx, serviceAccount, metav1.GetOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return fmt.Errorf("get service account: %w", err)
+	} else if kerrors.IsNotFound(err) {
 		// create service account if it does not exist
-		serviceAccountRaw, err := json.Marshal(&corev1.ServiceAccount{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "ServiceAccount",
-				APIVersion: corev1.SchemeGroupVersion.String(),
-			},
+		k.Log.Infof("Create Service Account '%s'", serviceAccount)
+		_, err := k.client.Client().CoreV1().ServiceAccounts(k.namespace).Create(ctx, &corev1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   serviceAccount,
 				Labels: ExtraDevPodLabels,
 			},
-		})
-		if err != nil {
-			return err
-		}
-
-		k.Log.Infof("Create Service Account '%s'", serviceAccount)
-		buf := &bytes.Buffer{}
-		err = k.runCommand(ctx, []string{"create", "-f", "-"}, bytes.NewReader(serviceAccountRaw), buf, buf)
-		if err != nil {
-			return errors.Wrapf(err, "create service account: %s", buf.String())
+		}, metav1.CreateOptions{})
+		if err != nil && !kerrors.IsAlreadyExists(err) {
+			return fmt.Errorf("create service account: %w", err)
 		}
 	}
 
 	// try to find role binding
 	if k.options.ClusterRole != "" {
-		out, err = k.buildCmd(ctx, []string{"get", "rolebinding", id, "--ignore-not-found", "-o", "json"}).Output()
-		if err != nil {
-			return command.WrapCommandError(out, err)
-		} else if len(out) == 0 {
+		_, err := k.client.Client().RbacV1().RoleBindings(k.namespace).Get(ctx, id, metav1.GetOptions{})
+		if err != nil && !kerrors.IsNotFound(err) {
+			return fmt.Errorf("get role binding: %w", err)
+		} else if kerrors.IsNotFound(err) {
 			// create role binding
-			roleBindingRaw, err := json.Marshal(&rbacv1.RoleBinding{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "RoleBinding",
-					APIVersion: rbacv1.SchemeGroupVersion.String(),
-				},
+			k.Log.Infof("Create Role Binding '%s'", serviceAccount)
+			_, err := k.client.Client().RbacV1().RoleBindings(k.namespace).Create(ctx, &rbacv1.RoleBinding{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   id,
 					Labels: ExtraDevPodLabels,
@@ -68,16 +53,9 @@ func (k *KubernetesDriver) createServiceAccount(ctx context.Context, id, service
 					Kind:     "ClusterRole",
 					Name:     k.options.ClusterRole,
 				},
-			})
-			if err != nil {
-				return err
-			}
-
-			k.Log.Infof("Create Role Binding '%s'", serviceAccount)
-			buf := &bytes.Buffer{}
-			err = k.runCommand(ctx, []string{"create", "-f", "-"}, bytes.NewReader(roleBindingRaw), buf, buf)
-			if err != nil {
-				return errors.Wrapf(err, "create role binding: %s", buf.String())
+			}, metav1.CreateOptions{})
+			if err != nil && !kerrors.IsAlreadyExists(err) {
+				return fmt.Errorf("create role binding: %w", err)
 			}
 		}
 	}

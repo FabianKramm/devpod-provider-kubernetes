@@ -18,17 +18,13 @@ optionGroups:
       - CLUSTER_ROLE
       - SERVICE_ACCOUNT
       - CREATE_NAMESPACE
-      - KUBECTL_PATH
       - INACTIVITY_TIMEOUT
       - STORAGE_CLASS
       - PVC_ACCESS_MODE
       - PVC_ANNOTATIONS
       - RESOURCES
       - POD_MANIFEST_TEMPLATE
-      - ARCH_DETECTION_POD_MANIFEST_TEMPLATE
       - NODE_SELECTOR
-      - HELPER_RESOURCES
-      - HELPER_IMAGE
       - LABELS
       - DOCKERLESS_DISABLED
       - DOCKERLESS_IMAGE
@@ -48,13 +44,8 @@ options:
     type: boolean
     global: true
   KUBERNETES_NAMESPACE:
-    description: The kubernetes namespace to use
-    command: |-
-      NAMESPACE=$(${KUBECTL_PATH} config view --kubeconfig=${KUBERNETES_CONFIG} --context=${KUBERNETES_CONTEXT} --minify -o jsonpath='{..namespace}' 2>/dev/null || true)
-      if [ -z "${NAMESPACE}" ]; then
-        NAMESPACE=devpod
-      fi
-      echo $NAMESPACE
+    description: The kubernetes namespace to use. Defaults to devpod.
+    default: "devpod"
   CREATE_NAMESPACE:
     description: If true, DevPod will try to create the namespace.
     default: "true"
@@ -65,16 +56,6 @@ options:
     global: true
   SERVICE_ACCOUNT:
     description: If defined, DevPod will use the given service account for the dev container.
-    global: true
-  HELPER_IMAGE:
-    description: The image DevPod will use to find out the cluster architecture. Defaults to alpine.
-    global: true
-  HELPER_RESOURCES:
-    description: The resources to use for the workspace init container. E.g. requests.cpu=100m,limits.memory=1Gi
-    global: true
-  KUBECTL_PATH:
-    description: The path where to find the kubectl binary.
-    default: kubectl
     global: true
   INACTIVITY_TIMEOUT:
     description: "If defined, will automatically stop the pod after the inactivity period. Examples: 10m, 1h"
@@ -98,10 +79,6 @@ options:
     global: true
   POD_MANIFEST_TEMPLATE:
     description: Pod manifest template file path used as template to build the devpod pod. E.g. /path/pod_manifest.yaml. Alternatively can be an inline yaml string.
-    global: true
-    type: multiline
-  ARCH_DETECTION_POD_MANIFEST_TEMPLATE:
-    description: Pod manifest template file path used as template to build the architecture detenction pod. E.g. /path/pod_manifest.yaml. Alternatively can be an inline yaml string.
     global: true
     type: multiline
   LABELS:
